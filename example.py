@@ -6,6 +6,7 @@ from flask import Flask, render_template
 from flask_googlemaps import GoogleMaps
 from flask_googlemaps import Map
 from flask_googlemaps import icons
+from elasticsearch import Elasticsearch
 import os
 import re
 import sys
@@ -630,6 +631,36 @@ def main():
 
 def process_step(args, api_endpoint, access_token, profile_response,
                  pokemonsJSON, ignore, only):
+    es = Elasticsearch()
+    """
+    {
+            'type': 'pokemon',
+            'pokemon_id': poke.pokemon.PokemonId,
+            'disappear_time': disappear_timestamp,
+            "found_at" : time.time(),
+            'location': {
+                'lat': poke.Latitude,
+                'lon': poke.Longitude
+             },
+            'name': pokename
+        }
+
+    """
+    es.indices.create(index='pokedex-2', ignore=400, body={
+        "mappings" : {
+            "pokemon" : {
+                "properties" : {
+                    "type" : { "type" : "string" },
+                    "pokemon_id" : { "type" : "integer" },
+                    "disappear_time" : { "type" : "date" },
+                    "name" : { "type" : "string" },
+                    "found_at" : { "type" : "date" },
+                    "location" : { "type" : "geo_point" }
+                }
+            }
+        }
+    })
+
     print('[+] Searching for Pokémon at location {} {}'.format(FLOAT_LAT, FLOAT_LONG))
     origin = LatLng.from_degrees(FLOAT_LAT, FLOAT_LONG)
     step_lat = FLOAT_LAT
@@ -706,6 +737,29 @@ transform_from_wgs_to_gcj(Location(Fort.Latitude, Fort.Longitude))
             "id": poke.pokemon.PokemonId,
             "name": pokename
         }
+        print({
+            'type': 'pokemon',
+            'pokemon_id': poke.pokemon.PokemonId,
+            'disappear_time': int(disappear_timestamp),
+            "found_at" : time.time().__str__(),
+            'location': {
+                'lat': poke.Latitude,
+                'lon': poke.Longitude
+             },
+            'name': pokename
+        })
+        es.index(index='pokedex-2', doc_type='pokemon', body={
+            'type': 'pokemon',
+            'pokemon_id': poke.pokemon.PokemonId,
+            'disappear_time': int(disappear_timestamp),
+            "found_at" : datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+            'location': {
+                'lat': poke.Latitude,
+                'lon': poke.Longitude
+             },
+            'name': pokename
+        })
+
 
 def clear_stale_pokemons():
     current_time = time.time()
@@ -901,6 +955,10 @@ def get_map():
         markers=get_pokemarkers(),
         zoom='15', )
     return fullmap
+
+
+def store_in_elasticsearch():
+    pass
 
 
 if __name__ == '__main__':
